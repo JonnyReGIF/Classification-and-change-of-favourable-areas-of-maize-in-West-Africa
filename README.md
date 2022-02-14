@@ -1,7 +1,7 @@
 # Using climate indices to forecast food security? – classification and change of (un)favourable areas for the cultivation of maize (Zea mays L.) in West Africa
 
 
-Welcome to our Github repository, where we share oure code and figures produced during the winter semester 21/22 during the course: Land System Science 2 Climate and Ecosystems by Prof. Dr. Conrad at the Martin-Luther-University-Halle-Wittenberg. 
+Welcome to our Github repository, where we share oure code and figures produced in the winter term 21/22 during the course: Land System Science 2 Climate and Ecosystems by Prof. Dr. Conrad at the Martin-Luther-University-Halle-Wittenberg. 
 
 A Workflow, a summary of our Methods and Results can be seen in the Poster.pdf. 
 
