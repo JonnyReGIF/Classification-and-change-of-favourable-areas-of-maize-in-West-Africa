@@ -10,8 +10,8 @@ library(tidyverse)
 
 # Preprocessing and calculation of rainy season (reduce data to growing Season)
 prep_cordex      <- function (file_list, studyarea, maize, unit, start_data, end_data) {
-
-
+  
+  
   # Create raster stack from all files in file_list
   rasterstack <- rast(file_list)
   
@@ -42,11 +42,11 @@ subset_data_year <- function(year, data){
   #define start of the year
   #y_start <- unique(year(ymd(c(names(data)))))
   start <- as.Date(paste0(year,"-01-01"), format = "%Y-%m-%d")
-
+  
   #define lasst day of year
   #y_end <- unique(year(ymd(c(names(data)))))[i]
   end <- as.Date(paste0(year,"-12-31"), format = "%Y-%m-%d")
-
+  
   #subset one year by start and end of year
   #Sub creates a T (True == in time range) or F (not in time range) binary mask
   #The mask is uses to subset the actual Data
@@ -55,7 +55,7 @@ subset_data_year <- function(year, data){
     
     sub <- names(data) >= as.POSIXct(start) & names(data) <= as.POSIXct(end)
     subset <- data[[sub]]
-  
+    
     return(subset)
     
   } else if(class(data) == "data.frame" ){
@@ -265,7 +265,7 @@ prec_sums         <- function(prec, table_start_end_day){
   for (j in 1:(ncol(table_prec)/365)) {
     
     sub_rs <- data.frame()
-
+    
     sub <- subset_data_year(n[i], table_prec)
     
     for (i in 1:nrow(sub)) {
@@ -299,7 +299,7 @@ drougth_spells    <- function(prec, table_start_end_day){
   # 3: Lethal: DS >13 d
   
   # Storage
-  drought_spells <- as.data.frame(prec, xy = T)[, 1:2]           # creating dataframe with x and y column
+  dry_spells <- as.data.frame(prec, xy = T)[, 1:2]           # creating dataframe with x and y column
   n <- c(substr(names(T_mean[[1]]), 1, 4):substr(names(T_mean[[nlyr(T_mean)]]), 1, 4))                         # vector with years. used to name new data
   ts <- seq(3,ncol(table_start_end_day), 2) # vector we need to specify the column for the start day of rainy season for each year
   te <- seq(4,ncol(table_start_end_day), 2) # vector we need to specify the column for the end day of growing season for each year
@@ -326,7 +326,7 @@ drougth_spells    <- function(prec, table_start_end_day){
     
     table_sub_rs <- as.data.frame(sub_rs)
     
-    # If a day during the rainy season has less than 0.85 it is classified as a drought spell 
+    # If a day during the rainy season has less than 0.85 it is classified as a dry spell 
     t <- ifelse(table_sub_rs < 0.85, 1, 0)
     
     fe <- apply(t, 1, FUN = function(x=t) {
@@ -339,21 +339,21 @@ drougth_spells    <- function(prec, table_start_end_day){
                    ifelse(max_p < 13 & max_p > 5, 2, 1))
     })
     
-    drought_spells <- cbind(drought_spells, fe)
-    # names(drought_spells)[i+2] <- n[i]      ### check this part 
+    dry_spells <- cbind(dry_spells, fe)
+    # names(dry_spells)[i+2] <- n[i]      ### check this part 
   }
   
-  names(drought_spells)[3:ncol(drought_spells)] <- n
+  names(dry_spells)[3:ncol(dry_spells)] <- n
   
   
   ## convert result dataframe into raster stack
-  drought_spells_rast <- rast(drought_spells, type = "xyz", crs = "EPSG:4326")
+  dry_spells_rast <- rast(dry_spells, type = "xyz", crs = "EPSG:4326")
   
-  return(drought_spells_rast)
+  return(dry_spells_rast)
 }
 
 # Combine the climate indices and classify to (un)favourabel Maize cultivation areas 
-combined_classification <- function(prec_possible_raster, heat_days_class_raster, drought_spells_rast){
+combined_classification <- function(prec_possible_raster, heat_days_class_raster, dry_spells_rast){
   
   
   # Storage
@@ -375,10 +375,10 @@ combined_classification <- function(prec_possible_raster, heat_days_class_raster
   
   
   
-  ## the loop to do the final crop prediction classes on the basis of precipitation, heatdays and drought spells
+  ## the loop to do the final crop prediction classes on the basis of precipitation, heatdays and dry spells
   for (i in 1:nlyr(TP_Final)) {
     TP <- TP_Final[[i]]
-    DS <- drought_spells_rast[[i]]
+    DS <- dry_spells_rast[[i]]
     
     l <- ifel(TP == 1 & DS == 1, 1, 
               ifel(TP == 1 & DS == 2 | TP == 2 & DS == 1, 2, 
@@ -402,18 +402,14 @@ mean_period_calc        <- function(time_start, time_end, data, type){
   #create a new Index containing only the day-mon information of the time attribute 
   index <- as.Date(names(data))%>%
     format(format = "%m-%d")
-
+  
   # Uses the above created index as a new index for the whole stack 
   # Subsets the stack based on the index
   # Applys a function (mean) to the subseted Data 
   mean_ <- tapp(data_2021_2040,index, mean, type)
   
-
+  
   
   return(mean_)
   
 }
-
-
-
-
