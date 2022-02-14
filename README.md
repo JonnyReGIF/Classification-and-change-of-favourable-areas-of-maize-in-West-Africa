@@ -5,6 +5,8 @@ Welcome to our github repository, where we share oure code and figures produced 
 
 A workflow, a summary of our Methods and Results can be found in the Poster.pdf. 
 
+Used literature is available in the References_Poster document.  
+
 The R code is available in forme of indipendent functions and in a "Top-Down" version. 
 
 
