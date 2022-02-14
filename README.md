@@ -1,11 +1,11 @@
 # Using climate indices to forecast food security? – classification and change of (un)favourable areas for the cultivation of maize (Zea mays L.) in West Africa
 
 
-Welcome to our Github repository, where we share oure code and figures produced in the winter term 21/22 during the course: Land System Science 2 Climate and Ecosystems by Prof. Dr. Conrad at the Martin-Luther-University-Halle-Wittenberg. 
+Welcome to our github repository, where we share oure code and figures produced in the winter term 21/22 during the course: Land System Science 2 Climate and Ecosystems by Prof. Dr. Conrad at the Martin-Luther-University-Halle-Wittenberg. 
 
-A Workflow, a summary of our Methods and Results can be seen in the Poster.pdf. 
+A workflow, a summary of our Methods and Results can be found in the Poster.pdf. 
 
-The R Code is available in forme of indipendent functions and in a "Top-Down" version. 
+The R code is available in forme of indipendent functions and in a "Top-Down" version. 
 
 
 ### Classification and change Results of (un)favourable areas for the cultivation of maize (Zea mays L.) in West Africa from 2021 - 2100
