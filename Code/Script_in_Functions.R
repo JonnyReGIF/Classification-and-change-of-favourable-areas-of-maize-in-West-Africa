@@ -7,10 +7,55 @@ require(terra)      # Handling rasterdata
 require(PCICt)      # 365 d clender
 require(lubridate)  # Handling dates 
 library(tidyverse)  
+require(stringr)
 
-# Preprocessing and calculation of rainy season (reduce data to growing Season)
-prep_cordex      <- function (file_list, studyarea, maize, unit, start_data, end_data) {
+files_prec <- list.files("your path", full.names = TRUE)
+files_TMax  <- list.files("your path", full.names = TRUE)
+files_TMean <- list.files("your path", full.names = TRUE)
+
+
+#################
+#### Content ####
+#################
+
+# PART I:   Function for Preprocessing Cordex Data and Calculate Rainy Season Onset and Growing Period 
+# PART II:  Functions to Calculate and Classify three climatic indices: temperature (heat days), precipitation and dry spells within growing period
+# PART III: Functions to combine the classifications of all climatic indices 
+# PART IV:  Function to calculate defined periods 
+# PART V:   Function to calculate area 
+
+
+
+##########################################################################################################################
+####### PART I:   Function for Preprocessing Cordex Data and Calculate Rainy Season Onset and Growing Period   ###########
+##########################################################################################################################
+
+# Preprocessing includes stacking all raters, masking the desired study area, 
+# naming all raster Layers by date optional the user can supply a raster with crop cultivation area which is then used to mask the input data
+prep_cordex      <- function (file_list, studyarea, crop_cultivation_area, unit, start_data, end_data) {
   
+  if(missing(crop_cultivation_area) == T){
+    
+    # Create raster stack from all files in file_list
+    rasterstack <- rast(file_list)
+    
+    # define stack crs and crop to the extent of studyare 
+    crs(rasterstack) <- crs(studyarea)
+    rasterstack_crop <- crop(rasterstack, ext(studyarea))
+    
+    
+    if(unit == "mm/d"){
+      rasterstack_mask_unit <- rasterstack_crop * 86400
+    }else if(unit == "°C"){
+      rasterstack_mask_unit <- rasterstack_crop - 273.15
+    }
+    
+    # Renaming Data 
+    names(rasterstack_mask_unit) <- seq(as.PCICt(start_data, cal = "365_day"), as.PCICt(end_data, cal = "365_day"), by = "day")
+    
+    return(rasterstack_mask_unit)
+  
+  }else{
   
   # Create raster stack from all files in file_list
   rasterstack <- rast(file_list)
@@ -21,7 +66,7 @@ prep_cordex      <- function (file_list, studyarea, maize, unit, start_data, end
   
   # Mask climate data to maize cultivation areas from monfreda et. al 
   # Resample maize cultivationdata to rasterstack res 
-  maize_resampled <- terra::resample(maize, rasterstack_crop)
+  maize_resampled <- terra::resample(crop_cultivation_area, rasterstack_crop)
   rasterstack_mask <- terra::mask(rasterstack_crop, maize_resampled)
   
   if(unit == "mm/d"){
@@ -34,18 +79,22 @@ prep_cordex      <- function (file_list, studyarea, maize, unit, start_data, end
   names(rasterstack_mask_unit) <- seq(as.PCICt(start_data, cal = "365_day"), as.PCICt(end_data, cal = "365_day"), by = "day")
   
   return(rasterstack_mask_unit)
+  }
 }
+
+# Helper function to subset climate data by year, only works with in conjunction prep_cordex 
+# Create a yearly subset of any data indexed by a Date
 subset_data_year <- function(year, data){
   
   # Create a yearly subset of any data indexed  by a Date
   
   #define start of the year
   #y_start <- unique(year(ymd(c(names(data)))))
-  start <- as.Date(paste0(year,"-01-01"), format = "%Y-%m-%d")
+  start <- paste0(year,"-01-01")
   
   #define lasst day of year
   #y_end <- unique(year(ymd(c(names(data)))))[i]
-  end <- as.Date(paste0(year,"-12-31"), format = "%Y-%m-%d")
+  end <- paste0(year,"-12-31")
   
   #subset one year by start and end of year
   #Sub creates a T (True == in time range) or F (not in time range) binary mask
@@ -61,17 +110,19 @@ subset_data_year <- function(year, data){
   } else if(class(data) == "data.frame" ){
     print("I am class df")
     #sub <- colnames(data) >= as.POSIXct(start) & names(data) <= as.POSIXct(end)
-    subset <- data[,colnames(data) >= as.POSIXct(start) & names(data) <= as.POSIXct(end)]
+    subset <- data[,c(substring(colnames(data), 1,4) == year)]
     
     return(subset)
   }
 }
+
+# Function to calculate the rainy season onset after Dunning et al. 2016
 calc_rainyseason <- function(prec){
   
   ## creating empty raster to store output of the following loops in it
   prec_q_quer <- rast(extent = ext(prec), resolution = res(prec), crs = crs(prec))  # Q_quer = Mean precipitation of one year for each pixel
-  precipitation_anomaly <- rast(extent = ext(prec), resolution = res(prec), crs = crs(prec))  # daily precipitation anomaly data for one year
-  storage_cumulative <- rast(extent = ext(prec), resolution = res(prec), crs = crs(prec))  # cumulative sum of the precipitation anomaly for each year
+  precipitation_anomaly <- rast(extent = ext(prec), resolution = res(prec), crs = crs(prec))  # Daily precipitation anomaly data for one year
+  storage_cumulative <- rast(extent = ext(prec), resolution = res(prec), crs = crs(prec))  # Cumulative sum of the precipitation anomaly for each year
   table_start_end_day <- as.data.frame(prec, xy = TRUE)[, 1:2]  
   
   l <- seq(1, nlyr(prec), 365)
@@ -146,13 +197,13 @@ calc_rainyseason <- function(prec){
   ## the loop to find 
   for (i in 1:(nlyr(storage_cumulative)/365)) {
     
-    table_cumulative <- as.data.frame(subset_data_year(n[i], storage_cumulative)) # subsetting the data year wise and converting it into a dataframe
+    table_cumulative <- as.data.frame(storage_cumulative[[l2[i]:m2[i]]]) # subsetting the data year wise and converting it into a dataframe
     min_index <- apply(table_cumulative, 1, which.min) # identifies for each pixel the column (=day of selected year) where the value is the minimum
     
     t <- cbind(start_day_ = (min_index + 59), # creating a new dataframe with the start day of the rainy season for the selected day (we need to add 59 days since we cutted out the first 60 days of the year) 
                end_day_ = (min_index+120+59)) # the end day is defined as the day the growing period of maize (120 days after seeding) is reached
-    colnames(t)[1] <- paste0("start_day_", n[i]) # renaming the columns (adding the selected year)
-    colnames(t)[2] <- paste0("end_day_", n[i])  # renaming the columns (adding the selected year)
+    colnames(t)[1] <- paste0("s_day_", n[i]) # renaming the columns (adding the selected year)
+    colnames(t)[2] <- paste0("e_day_", n[i])  # renaming the columns (adding the selected year)
     table_start_end_day <- cbind(table_start_end_day, t) # adding the dataframe we just created to the dataframe containing x-/y-coordinates
   }
   
@@ -162,8 +213,39 @@ calc_rainyseason <- function(prec){
   return(results_rs)
 }
 
+#########################################################################################################################################################
+### PART II:  Functions to Calculate and Classify three climatic indices: temperature (heat days), precipitation and dry spells within growing period ###
+#########################################################################################################################################################
+
 # Calculate climatic indices 
-temperatur_thresh <- function(T_max, T_mean, table_start_end_day){
+# If start the rainy season onset table is not supplied as an argument the function calc_rainyseason is called  
+# Classification thresholds can be set by the user else default Class threshs are used 
+
+
+# The thresholds are used to calculate three classes: 1. Optimum Growth 2. Risk of Yield reduction 3. Crop Failure
+# To change the classification thresholds, a named list with upper, lower and optimum thresholds can be passed to the function by the user
+# The example below explains how to set classification thresholds 
+# Default Parameters are synthesized from Literature, for the crop maize and can be viewed in climate indices functions (For References: https://github.com/JonnyReGIF/Classification-and-change-of-favourable-areas-of-maize-in-West-Africa)
+# 
+# 
+# params_temperature_thresh <- list(Lethal  = 46,
+#                                   Heat_day_affecting_yield = 32,
+#                                   optimum_min_Tmean = 15,
+#                                   optimum_max_Tmean = 32)
+# 
+# 
+# 
+# params_precipitation      <- list(max = c(1200, 1800),
+#                                   min = c(400,   600), 
+#                                   optimum     = c(600,  1200))
+# 
+# 
+# params_drougth_spells     <- list(Lethal = 13, 
+#                                   Ernteminderung = c(13, 5)
+
+
+# Function to classify the temperature thresholds based on daily mean and maximum near air temperature 
+temperatur_thresh <- function(T_max, T_mean, table_start_end_day, params_temperature_thresh){
   
   # Classification rules 
   # 0: criteria have not been met
@@ -171,78 +253,114 @@ temperatur_thresh <- function(T_max, T_mean, table_start_end_day){
   # 2: Heat day affecting yield (T mean over 32°C) 
   # 3: Lethal (T max over 46°C)
   
+  # If Parameter for the temperature thresh are not defined default parameters are taken into account
+  # else user defined parameters are used 
   
-  # Calc a Vector containing all unique Years in one input stack (naming data by data function prep)
-  n <- c(substr(names(prec[[1]]), 1, 4):substr(names(prec[[nlyr(prec)]]), 1, 4))  
-  
-  # Stack to df 
-  table_Tmean <- as.data.frame(T_max)
-  table_Tmax  <- as.data.frame(T_mean)
-  
-  # Create empty data.frames to store results 
-  heat_days_growing_season <- as.data.frame(T_mean, xy = TRUE)[, 1:2]   # creating dataframe with x and y column 
-  heat_days_possible <- as.data.frame(T_mean, xy = TRUE)[, 1:2]   # creating dataframe with x and y column 
-  heat_days_class_raster <- rast(extent = ext(T_mean), resolution = res(T_mean), crs = crs(T_mean)) #emty raster to store loop output data
-  n <- c(substr(names(T_mean[[1]]), 1, 4):substr(names(T_mean[[nlyr(T_mean)]]), 1, 4))# vector with years. used to name new data
-  
-  # ts = time_start vector containing index values pointing to the start of season of a specific year 
-  # te = time_end   vector containing index values pointing to the start of season of a specific year 
-  ts <- seq(3,ncol(table_start_end_day), 2) # vector we need to specify the column for the start day of rainy season for each year
-  te <- seq(4,ncol(table_start_end_day), 2) # vector we need to specify the column for the end day of growing season for each year
+  if(missing(params_temperature_thresh) == T){
+      params_temperature_thresh <- list(Lethal  = 46,
+                                        Heat_day_affecting_yield = 32,
+                                        optimum_min_Tmean = 15,
+                                        optimum_max_Tmean = 32)
+    } 
   
   
-  # Initialize all variabels used inside the lopp with zero 
-  j <- i <- s <- e <- l <- m <- u <- b <- t <- 0
+  # If the table_start_end_day is not supplied the function calls the calc_rainyseason function and
+  # asks the user to supply the path to the preprocessed precipitation dataset 
   
-  for (j in 1:(ncol(table_Tmean)/365)) {
-    sub_Tmean <- data.frame()
-    sub_Tmax <- data.frame()
-    # s <- 1  
-    # e <- 365  
-    # l <- seq(s, ncol(table_Tmean), 365)
-    # m <- seq(e, ncol(table_Tmean), 365)
+  if(missing(table_start_end_day) == T){
     
-    # sub_mean <- table_Tmean[l[j]:m[j]]           
-    # sub_max <- table_Tmax[l[j]:m[j]]
+    cat("Table start end day not supplied \n Function calc_rainyseason will be called \n pls provide windows path to precipitation dataset: \n Pay attention to slashes, pls provide in an R interpretable way")
+    prec_path = readline()
+    #prec = str_replace_all(prec, "\", "[\\]")
+    print(prec_path)
+    prec = rast(prec_path)
+    table_start_end_day <- calc_rainyseason(prec)
+    table_start_end_day <- table_start_end_day$table_start_end_day
     
-    sub_mean <- subset_data_year(n[i], table_Tmean)            # subsetting the mean Temperature dataframe to the right year
-    sub_max <-  subset_data_year(n[i], table_Tmax)             # subsetting the max Temperature dataframe to the right year
-    for (i in 1:nrow(sub_mean)) {
-      u <- sub_mean[i,  table_start_end_day[i, ts[j]]:table_start_end_day[i, te[j]]]   # this loop subsets the selected year data to the dynamic growing season for each pixel
-      b <- sub_max[i,  table_start_end_day[i, ts[j]]:table_start_end_day[i, te[j]]]    # this loop subsets the selected year data to the dynamic growing season for each pixel
-      colnames(u) <- c(1:120)
-      colnames(b) <- c(1:120)
-      sub_Tmean <- rbind(sub_Tmean, u)
-      sub_Tmax <- rbind(sub_Tmax, b)
+  }else{
+    
+    # Calc a Vector containing all unique Years in one input stack (naming data by data function prep)
+    n <- c(substr(names(T_max[[1]]), 1, 4):substr(names(T_max[[nlyr(T_max)]]), 1, 4))  
+    
+    # Stack to df 
+    table_Tmean <- as.data.frame(T_max)
+    table_Tmax  <- as.data.frame(T_mean)
+    
+    # Create empty data.frames to store results 
+    heat_days_growing_season <- as.data.frame(T_mean, xy = TRUE)[, 1:2]   # creating dataframe with x and y column 
+    heat_days_possible <- as.data.frame(T_mean, xy = TRUE)[, 1:2]   # creating dataframe with x and y column 
+    heat_days_class_raster <- rast(extent = ext(T_mean), resolution = res(T_mean), crs = crs(T_mean)) #emty raster to store loop output data
+    n <- c(substr(names(T_mean[[1]]), 1, 4):substr(names(T_mean[[nlyr(T_mean)]]), 1, 4))# vector with years. used to name new data
+    
+    # ts = time_start vector containing index values pointing to the start of season of a specific year 
+    # te = time_end   vector containing index values pointing to the start of season of a specific year 
+    ts <- seq(3,ncol(table_start_end_day), 2) # vector we need to specify the column for the start day of rainy season for each year
+    te <- seq(4,ncol(table_start_end_day), 2) # vector we need to specify the column for the end day of growing season for each year
+    
+    
+    # Initialize all variabels used inside the lopp with zero 
+    j <- i <- s <- e <- l <- m <- u <- b <- t <- 0
+    
+    for (j in 1:(ncol(table_Tmean)/365)) {
+      sub_Tmean <- data.frame()
+      sub_Tmax <- data.frame()
+      # s <- 1  
+      # e <- 365  
+      # l <- seq(s, ncol(table_Tmean), 365)
+      # m <- seq(e, ncol(table_Tmean), 365)
+      
+      # sub_mean <- table_Tmean[l[j]:m[j]]           
+      # sub_max <- table_Tmax[l[j]:m[j]]
+      
+      sub_mean <- subset_data_year(n[j], table_Tmean)            # subsetting the mean Temperature dataframe to the right year
+      sub_max <-  subset_data_year(n[j], table_Tmax)             # subsetting the max Temperature dataframe to the right year
+      print(sub_mean)
+      print(sub_max)
+      for (i in 1:nrow(sub_mean)) {
+        u <- sub_mean[i,  table_start_end_day[i, ts[j]]:table_start_end_day[i, te[j]]]   # this loop subsets the selected year data to the dynamic growing season for each pixel
+        b <- sub_max[i,  table_start_end_day[i, ts[j]]:table_start_end_day[i, te[j]]]    # this loop subsets the selected year data to the dynamic growing season for each pixel
+        colnames(u) <- c(1:121)
+        colnames(b) <- c(1:121)
+        sub_Tmean <- rbind(sub_Tmean, u)
+        sub_Tmax <- rbind(sub_Tmax, b)
+      }
+      
+      # Classification rules 
+      # 0: criteria have not been met
+      # 1: Optima (15 - 32°C) 
+      # 2: Heat day affecting yield (T mean over 32°C) 
+      # 3: Lethal (T max over 46°C)
+      
+ 
+      t <- ifelse(sub_Tmax >= params_temperature_thresh$Lethal, 3,    
+                  ifelse(sub_Tmean > params_temperature_thresh$Heat_day_affecting_yield, 2, 
+                         ifelse(sub_Tmean >= params_temperature_thresh$optimum_min_Tmean & sub_Tmean <= params_temperature_thresh$optimum_max_Tmean, 1, 0)))
+      #heat_days_possible <- cbind(heat_days_possible, t)
+      
+      # name all days in the growing season 
+      colnames(t) <- paste0("day_", c(1:121))
+      
+      # combine coordinates from rasterstack and classified values to one df
+      ge <- cbind(as.data.frame(T_mean, xy = TRUE)[, 1:2], t)
+      
+      # Create raster from df
+      ge_r <- rast(ge, type = "xyz", crs = "EPSG:4326")
+      
+      # get maximum Value from each pixel 
+      p_2 <- app(ge_r, fun = max)  
+      
+      names(p_2) <- n[j]
+      add(heat_days_class_raster) <- p_2
     }
     
+    list_results <- list()
     
-    t <- ifelse(sub_Tmax >= 46, 3,    #### CHECK THIS PART
-                ifelse(sub_Tmean > 32, 2, #### CHECK THIS PART
-                       ifelse(sub_Tmean >= 15 & sub_Tmean <= 32, 1, 0)))#### CHECK THIS PART
-    #heat_days_possible <- cbind(heat_days_possible, t)#### CHECK THIS PART
-    
-    # name all days in the growing season 
-    colnames(t) <- paste0("day_", c(1:121))
-    
-    # combine coordinates from rasterstack and classified values to one df
-    ge <- cbind(as.data.frame(T_mean, xy = TRUE)[, 1:2], t)
-    
-    # Create raster from df
-    ge_r <- rast(ge, type = "xyz", crs = "EPSG:4326")
-    
-    # get maximum Value from each pixel 
-    p_2 <- app(ge_r, fun = max)  
-    
-    names(p_2) <- n[j]
-    add(heat_days_class_raster) <- p_2
+    return(heat_days_class_raster)
   }
-  
-  list_results <- list()
-  
-  return(heat_days_class_raster)
 }
-prec_sums         <- function(prec, table_start_end_day){
+
+# Function to classify precipitation sums 
+prec_sums         <- function(prec, table_start_end_day, params_precipitation){
   
   # Classification rules
   # 0: criteria have not been met
@@ -250,9 +368,31 @@ prec_sums         <- function(prec, table_start_end_day){
   # 2: Optima (600 - 1200mm) 
   # 3: max (1200 - 1800mm)
   
+  # If Parameter for the temperature thresh are not defined default parameters are taken into account
+  # else user defined parameters are used 
+  
+  if(missing(params_precipitation) == T){
+  params_precipitation      <- list(max = c(1200, 1800),
+                                    min = c(400,   600), 
+                                    optimum     = c(600,  1200))
+  }
+  
+  if(missing(table_start_end_day) == T){
+    
+    cat("Table start end day not supplied \n Function calc_rainyseason will be called \n pls provide windows path to precipitation dataset: \n Pay attention to slashes, pls provide in an R interpretable way")
+    prec_path = readline()
+    #prec = str_replace_all(prec, "\", "[\\]")
+    print(prec_path)
+    prec = rast(prec_path)
+    table_start_end_day <- calc_rainyseason(prec)
+    table_start_end_day <- table_start_end_day$table_start_end_day
+    
+  }else{
+  
+  
   # Create storage Variabels 
   prec_possible <- as.data.frame(prec, xy = TRUE)[, 1:2]          # creating dataframe with x and y column
-  n <- c(substr(names(T_mean[[1]]), 1, 4):substr(names(T_mean[[nlyr(T_mean)]]), 1, 4))                          # vector with years. used to name new data
+  n <- c(substr(names(prec[[1]]), 1, 4):substr(names(prec[[nlyr(prec)]]), 1, 4))                          # vector with years. used to name new data
   ts <- seq(3,ncol(table_start_end_day), 2) # vector we need to specify the column for the start day of rainy season for each year
   te <- seq(4,ncol(table_start_end_day), 2) # vector we need to specify the column for the end day of growing season for each year
   
@@ -278,9 +418,9 @@ prec_sums         <- function(prec, table_start_end_day){
     colnames(sum_rs)[1] <- paste0("mm_", n[j])
     
     
-    t <- ifelse(sum_rs >= 400 & sum_rs <= 600, 2, 
-                ifelse(sum_rs > 600 & sum_rs <= 1200, 1, 
-                       ifelse(sum_rs > 1200 & sum_rs <= 1800, 3, 0)))
+    t <- ifelse(sum_rs >= params_precipitation$min[1] & sum_rs <= params_precipitation$min[2], 2, 
+                ifelse(sum_rs > params_precipitation$optimum[1] & sum_rs <= params_precipitation$optimum[2], 1, 
+                       ifelse(sum_rs > params_precipitation$max[1] & sum_rs <= params_precipitation$max[2], 3, 0)))
     
     prec_possible <- cbind(prec_possible, t)
     
@@ -289,17 +429,39 @@ prec_sums         <- function(prec, table_start_end_day){
   prec_possible_raster <- rast(prec_possible, type = "xyz", crs = "EPSG:4326")
   
   return(prec_possible_raster)
-  
+  }
 }
-drougth_spells    <- function(prec, table_start_end_day){
+
+# Function to calculate and classify dry spells (DS)
+drougth_spells    <- function(prec, table_start_end_day, params_drougth_spells){
   
   # Classification rules 
   # 1: Optimum: DS <5 d
   # 2: Ernteminderung: DS 5-13 d 
   # 3: Lethal: DS >13 d
   
+  # If user defined parameters are missing 
+  # Default Parameters are used 
+  
+  if(missing(params_drougth_spells) == T){
+  params_drougth_spells     <- list(Lethal = 13, 
+                                    Ernteminderung = c(13, 5))
+  }
+  
+  if(missing(table_start_end_day) == T){
+    
+    cat("Table start end day not supplied \n Function calc_rainyseason will be called \n pls provide windows path to precipitation dataset: \n Pay attention to slashes, pls provide in an R interpretable way")
+    prec_path = readline()
+    #prec = str_replace_all(prec, "\", "[\\]")
+    print(prec_path)
+    prec = rast(prec_path)
+    table_start_end_day <- calc_rainyseason(prec)
+    table_start_end_day <- table_start_end_day$table_start_end_day
+    
+  }else{
+  
   # Storage
-  dry_spells <- as.data.frame(prec, xy = T)[, 1:2]           # creating dataframe with x and y column
+  drought_spells <- as.data.frame(prec, xy = T)[, 1:2]           # creating dataframe with x and y column
   n <- c(substr(names(T_mean[[1]]), 1, 4):substr(names(T_mean[[nlyr(T_mean)]]), 1, 4))                         # vector with years. used to name new data
   ts <- seq(3,ncol(table_start_end_day), 2) # vector we need to specify the column for the start day of rainy season for each year
   te <- seq(4,ncol(table_start_end_day), 2) # vector we need to specify the column for the end day of growing season for each year
@@ -326,7 +488,7 @@ drougth_spells    <- function(prec, table_start_end_day){
     
     table_sub_rs <- as.data.frame(sub_rs)
     
-    # If a day during the rainy season has less than 0.85 it is classified as a dry spell 
+    # If a day during the rainy season has less than 0.85 it is classified as a drought spell 
     t <- ifelse(table_sub_rs < 0.85, 1, 0)
     
     fe <- apply(t, 1, FUN = function(x=t) {
@@ -335,25 +497,32 @@ drougth_spells    <- function(prec, table_start_end_day){
       rle <- rle(x)
       
       max_p <- max(rle$lengths[rle$values!=0])
-      op <- ifelse(max_p > 13, 3,
-                   ifelse(max_p < 13 & max_p > 5, 2, 1))
+      op <- ifelse(max_p > params_drougth_spells$Lethal, 3,
+                   ifelse(max_p < params_drougth_spells$Ernteminderung[1] & max_p > params_drougth_spells$Ernteminderung[2], 2, 1))
     })
     
-    dry_spells <- cbind(dry_spells, fe)
-    # names(dry_spells)[i+2] <- n[i]      ### check this part 
+    drought_spells <- cbind(drought_spells, fe)
+    # names(drought_spells)[i+2] <- n[i]      ### check this part 
   }
   
-  names(dry_spells)[3:ncol(dry_spells)] <- n
+  names(drought_spells)[3:ncol(drought_spells)] <- n
   
   
   ## convert result dataframe into raster stack
-  dry_spells_rast <- rast(dry_spells, type = "xyz", crs = "EPSG:4326")
+  drought_spells_rast <- rast(drought_spells, type = "xyz", crs = "EPSG:4326")
   
-  return(dry_spells_rast)
+  return(drought_spells_rast)
+  }
 }
 
-# Combine the climate indices and classify to (un)favourabel Maize cultivation areas 
-combined_classification <- function(prec_possible_raster, heat_days_class_raster, dry_spells_rast){
+
+
+##################################################################################
+### PART III: Functions to combine the classifications of all climatic indices ###
+##################################################################################
+
+# Function to combine all three climate indices and classify to final (un)favourable Maize cultivation areas 
+combined_classification <- function(prec_possible_raster, heat_days_class_raster, drought_spells_rast){
   
   
   # Storage
@@ -375,10 +544,10 @@ combined_classification <- function(prec_possible_raster, heat_days_class_raster
   
   
   
-  ## the loop to do the final crop prediction classes on the basis of precipitation, heatdays and dry spells
+  ## the loop to do the final crop prediction classes on the basis of precipitation, heatdays and drought spells
   for (i in 1:nlyr(TP_Final)) {
     TP <- TP_Final[[i]]
-    DS <- dry_spells_rast[[i]]
+    DS <- drought_spells_rast[[i]]
     
     l <- ifel(TP == 1 & DS == 1, 1, 
               ifel(TP == 1 & DS == 2 | TP == 2 & DS == 1, 2, 
@@ -392,7 +561,11 @@ combined_classification <- function(prec_possible_raster, heat_days_class_raster
   
 }
 
-# Calc mean values over a defined period 
+######################################################################
+#### PART IV: Function to calculate mean over  defined periods #######
+######################################################################
+
+# Function to Calc mean values over a defined period 
 mean_period_calc        <- function(time_start, time_end, data, type){
   
   #subset into 20 yr periodes 
@@ -413,3 +586,50 @@ mean_period_calc        <- function(time_start, time_end, data, type){
   return(mean_)
   
 }
+
+
+# function to calculate the area occupied by each class 
+area_fun <- function(data, crs, unit = "sqkm") {
+  
+  # project data in metric system 
+  data_proj <- project(data, crs, method = "near")
+  
+  name_unit <- paste0("area_", unit)
+  
+  # delete nan/na values and select unique values
+  e <- na.omit(c(unique(values(data_proj))))|>sort()
+  
+  # Selected unit can be "ha" = Hektar, "sqkm" = Sqare kilometers, or "sqm" = square meter 
+  if (unit=="sqkm") {
+    unit_value <- 100000
+  } else if (unit=="ha") {
+    unit_value <- 10000
+  } else if(unit=="sqm"){
+    unit_value <- 1
+  }
+  
+  #empty vector to store data in
+  area <- c()
+  prozent <- c()
+  
+  # loop to calculate area for each unique value 
+  for (i in 1:length(e)) {
+    a <- length(data_proj[data_proj%in%e[i]])*((res(data_proj)[1]^2)/unit_value)
+    area[i] <- a
+  }
+  
+  # loop to calculate percentage
+  for (j in 1:length(area)) {
+    f <- (100*area[j])/sum(area)
+    prozent[j] <- f
+  }
+  
+  # create data table 
+  area_tab <- cbind(class=e, area = area, prozent=prozent)|>as.data.frame()
+  names(area_tab)[2] <- name_unit
+  
+  
+  return(area_tab)
+}
+
+
