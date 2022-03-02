@@ -1,6 +1,6 @@
-################################################################
-#### Script to derive different effect on maize cultivation ####
-################################################################
+################################################################################################################
+#### Script to derive different effect of climate indices on maize cultivation areas within defined periods ####
+################################################################################################################
 
 
 ## required packages
@@ -45,13 +45,13 @@ end_period <- "2080-12-31"
 #### Content ####
 #################
 
-# PART I:   Preprocessing Cordex Data 
-# PART II:  Calculation Start of Rainy Season and Growing Season 
-# PART III: Subset the data to Growing Season
-# PART IV: Calculation of mean of defined periods
-# PART V: Identification and Classification of Temperature/Heat Days threshold values during defined periods 
-# PART VI: Calculation and Classification of Precipitation total during defined periods 
-# PART VII: Calculation and Classification of Dry Spells during defined periods
+# PART I   :  Preprocessing Cordex Data 
+# PART II  :  Calculation Start of Rainy Season and Growing Season 
+# PART III :  Subset the data to Growing Season
+# PART IV  :  Calculation of mean of defined periods
+# PART V   :  Identification and Classification of Temperature/Heat Days threshold values during defined periods 
+# PART VI  :  Calculation and Classification of Precipitation total during defined periods 
+# PART VII :  Calculation and Classification of Dry Spells during defined periods
 # PART VIII:  Final Classification to evaluate possible Maize Cultivation areas
 
 
@@ -183,7 +183,7 @@ table_start_end_day <- as.data.frame(prec, xy = TRUE)[, 1:2]                    
 l <- seq(1, nlyr(prec), 365)
 m <- seq(365, nlyr(prec), 365)
 
-  
+
 # sequence that indicates the layer that represents the first/last day of the static rainy season of each year (required to subset dataset)
 # "60" represents the day of the year we are postulating to be the earliest the growing season could start 
 # "212" represents the day of the year we are postulating to be the latest the growing season could start
@@ -212,7 +212,7 @@ for (i in 1:(nlyr(prec)/365)){
   
   # filling new raster stack with calculated data
   add(prec_q_quer) <- result
-
+  
 }
 
 
@@ -269,7 +269,7 @@ t <- 0
 
 ## the loop to find the onset of the rainy season and calculate growing season (start growing season = start rainy season, growing season of maize ends after 120 d (Nnoli et al. 2019)
 for (i in 1:(nlyr(storage_cumulative)/365)) {
-
+  
   table_cumulative <- as.data.frame(storage_cumulative[[l2[i]:m2[i]]]) # subsetting the data year wise and converting it into a dataframe
   min_index <- apply(table_cumulative, 1, which.min) # identifies for each pixel the column (=day of selected year) where the value is the minimum
   
@@ -410,14 +410,14 @@ writeRaster(Mean_RS_Prec,paste0(path,"/Prec_mean_RS_", substr(names(prec[[1]]), 
 ## furthermore the loop classifies the data. 
 ## Classifiation rules: 
 # 0: criteria have not been met
-# 1: optimum (15∞C > T mean > 32∞C) 
-# 2: risk of yield loss (T mean > 32∞C) 
-# 3: risk of crop failure (T max > 46∞C)
+# 1: optimum (15¬∞C > T mean > 32¬∞C) 
+# 2: risk of yield reduction (T mean > 32¬∞C) 
+# 3: risk of crop failure (T max > 46¬∞C)
 
 
 ## classify temperature data
 ge_r <- ifel(Mean_RS_Tmax >= 46, 3,  # risk of crop failure 
-             ifel(Mean_RS_Tmean > 32, 2, # risk of yield loss 
+             ifel(Mean_RS_Tmean > 32, 2, # risk of yield reduction 
                   ifel(Mean_RS_Tmean >= 15 & Mean_RS_Tmean <= 32, 1, 0))) # optimum, otherwise criteria not met 
 
 
@@ -440,9 +440,9 @@ writeRaster(heat_days_class_raster, paste0(path,"/Temp_Classification_Periode_",
 ## furthermore the loop classifies the data. 
 # Classification rules
 # 0: criteria have not been met = risk of crop failure 
-# 1: risk of yield loss because too dry (400 mm < prec < 600 mm) 
-# 2: Optima (600 mm < prec < 1200 mm) 
-# 3: risk of yield loss because too wet (1200 mm < prec < 1800 mm)
+# 1: Optima (600 mm < prec < 1200 mm)
+# 2: risk of yield reduction because too dry (400 mm < prec < 600 mm)
+# 3: risk of yield reduction because too wet (1200 mm < prec < 1800 mm)
 
 
 ## sum up the Precipitation for each pixel
@@ -450,9 +450,9 @@ sum_rs <- app(Mean_RS_Prec, fun = sum)
 
 
 ## classify precipitation data
-prec_possible_raster <- ifel(sum_rs >= 400 & sum_rs <= 600, 2, # too dry, risk of yield loss
-                              ifel(sum_rs > 600 & sum_rs <= 1200, 1, # optimum
-                                    ifel(sum_rs > 1200 & sum_rs <= 1800, 3, 0))) # too wet, risk of yield loss, otherwise risk of crop failure 
+prec_possible_raster <- ifel(sum_rs >= 400 & sum_rs <= 600, 2, # too dry, risk of yield reduction
+                             ifel(sum_rs > 600 & sum_rs <= 1200, 1, # optimum
+                                  ifel(sum_rs > 1200 & sum_rs <= 1800, 3, 0))) # too wet, risk of yield reduction, otherwise risk of crop failure 
 
 
 ## saving raster
@@ -473,7 +473,7 @@ writeRaster(prec_possible_raster, paste0(path,"/Prec_Classification_", substr(na
 
 # Classification rules 
 # 1: Optimum (DS <5 d) 
-# 2: risk of yield loss (5 d < DS < 13 d)  
+# 2: risk of yield reduction (5 d < DS < 13 d)  
 # 3: risk of crop failure (DS >13 d)
 
 
@@ -530,7 +530,7 @@ sum_dry <- apply(dry_spells, 1, FUN = mean)
 
 ## classify the averaged dry spells
 dry_class <- ifelse(sum_dry > 13, 3, # risk crop failure 
-                        ifelse(sum_dry < 13 & sum_dry > 5, 2, 1)) # risk yield loss, otherwise optimum 
+                    ifelse(sum_dry < 13 & sum_dry > 5, 2, 1)) # risk yield reduction, otherwise optimum 
 
 
 ## add coordinates to table
@@ -548,9 +548,9 @@ writeRaster(dry_spell_mean_rast, paste0(path,"/dry_Spell_Classes_", substr(names
 ##############################################################################################################
 
 
-####################################################################################‰‰‰
+####################################################################################√§√§√§
 #### PART VIII:  Final Classification to evaluate possible Maize Cultivation areas ####
-####################################################################################‰‰‰
+####################################################################################√§√§√§
 
 prec <-  prec_possible_raster
 temp <- heat_days_class_raster
@@ -559,23 +559,21 @@ DS <- dry_spell_mean_rast
 
 # create crop growth classification on the basis of precipitation and temperature (heat day) classes
 TP <- ifel(prec == 1 & temp == 1, 1, # optimum
-            ifel(prec ==2 & temp == 1 | prec == 3 & temp == 1 | prec == 1 & temp ==2 | prec == 3 & temp == 2, 2, # risk of slight yield loss
-                  ifel(prec == 2 & temp == 2, 3,  # risk of severe yield loss
-                       ifel(prec >= 0 & temp == 3 | prec == 0 & temp >= 1, 4, NA)))) # risk of crop failure 
- 
+           ifel(prec ==2 & temp == 1 | prec == 3 & temp == 1 | prec == 1 & temp ==2 | prec == 3 & temp == 2, 2, # risk of slight yield reduction
+                ifel(prec == 2 & temp == 2, 3,  # risk of severe yield reduction
+                     ifel(prec >= 0 & temp == 3 | prec == 0 & temp >= 1, 4, NA)))) # risk of crop failure 
+
 
 
 
 # do the final crop prediction classes on the basis of precipitation, temperature and dry spells
 TPD_Final <- ifel(TP == 1 & DS == 1, 1, # optimum 
-                  ifel(TP == 1 & DS == 2 | TP == 2 & DS == 1, 2, # risk slight yield loss
-                       ifel(TP == 2 & DS == 2 | TP == 3 & DS == 1 | TP == 3 & DS ==2 , 3, # risk severe yield loss
-                            ifel(TP == 4 & DS >= 1 | TP >= 1 & DS ==3, 4, NA)))) # risk of crop failure 
+                  ifel(TP == 1 & DS == 2 | TP == 2 & DS == 1, 2, # risk slight yield reduction
+                       ifel(TP == 2 & DS == 2 | TP == 3 & DS == 1 | TP == 3 & DS ==2 , 3, # risk severe yield reduction
+                            ifel(TP == 4 & DS >= 1 | TP >= 1 & DS ==3, 4, NA)))) # risk of crop failure
 
 
 ## saving raster
 writeRaster(TP, paste0(path,"/TP_Final_Periode_", substr(names(T_mean[[1]]), 1, 4), "_", substr(names(T_mean[[nlyr(T_mean)]]), 1, 4), ".grd"), filetype = "RRASTER", overwrite = TRUE)
 writeRaster(TPD_Final, paste0(path,"/TPD_Final_Periode_", substr(names(T_mean[[1]]), 1, 4), "_", substr(names(T_mean[[nlyr(T_mean)]]), 1, 4), ".grd"), filetype = "RRASTER", overwrite = TRUE)
-
-
 
